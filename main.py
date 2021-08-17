@@ -58,6 +58,9 @@ class Autoencoder(nn.Module):
 
         self.loss_fn = nn.MSELoss()
 
+    def get_size(self):
+        return layer_size(0)
+
     def forward(self, x):
         return self.linear_relu_stack(x)
 
@@ -65,12 +68,6 @@ class Autoencoder(nn.Module):
         optimizer = torch.optim.SGD(self.parameters(), lr=1e-3)
 
         for i, (X, _) in enumerate(data):
-            input_size = layer_size(0)
-            X = transforms.Compose([
-                transforms.Resize((input_size, input_size), transforms.InterpolationMode.BILINEAR),
-                transforms.ToTensor(),
-            ])(X)
-
             Y = self(X)
             loss = self.loss_fn(Y, X)
 
@@ -86,12 +83,6 @@ class Autoencoder(nn.Module):
         total_loss = 0.
 
         for i, (X, _) in enumerate(data):
-            input_size = layer_size(0)
-            X = transforms.Compose([
-                transforms.Resize((input_size, input_size), transforms.InterpolationMode.BILINEAR),
-                transforms.ToTensor(),
-            ])(X)
-
             Y = self(X)
             total_loss += self.loss_fn(Y, X).item()
 
@@ -101,7 +92,10 @@ if sys.argv[1] == '--train':
     model = Autoencoder().to(device)
     print(model)
 
-    data = ImageDataset(path='data/test/')
+    data = ImageDataset(path='data/test/', transforms.Compose([
+        transforms.Resize((model.get_size(), model.get_size()), transforms.InterpolationMode.BILINEAR),
+        transforms.ToTensor(),
+    ]))
     data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=32, shuffle=True, num_workers=8)
 
     epochs = 5
@@ -119,7 +113,7 @@ else:
     image_path = sys.argv[1]
     image = Image.open(image_path)
     image_width, image_height = image.size
-    input_size = layer_size(0)
+    input_size = model.get_size()
     X = transforms.Compose([
         transforms.Resize((input_size, input_size), transforms.InterpolationMode.BILINEAR),
         transforms.ToTensor(),
