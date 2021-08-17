@@ -50,12 +50,12 @@ class Autoencoder(nn.Module):
     def __init__(self):
         super(Autoencoder, self).__init__()
 
-        self.flatten = nn.Flatten()
         layers = []
         for i in range(0, 20):
             layers.append(nn.Linear(layer_size(i), layer_size(i + 1)))
             layers.append(nn.ReLU())
         self.linear_relu_stack = nn.Sequential(*layers)
+
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x):
@@ -128,7 +128,7 @@ else:
     Y = model(X)
     Y = transforms.Compose([
         transforms.ToPILImage(),
-        transforms.Resize((image_width, image_height), transforms.InterpolationMode.BILINEAR),
+        transforms.Resize((image_height, image_width), transforms.InterpolationMode.BILINEAR),
     ])(Y)
 
     fig = plt.figure(figsize=(8, 8))
