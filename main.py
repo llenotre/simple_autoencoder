@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import math
 import sys
 import torch
 from torch import nn
@@ -36,25 +37,28 @@ class ImageDataset(Dataset):
         return len(os.listdir(self.path))
 
 def layer_size(i: int) -> int:
-    in_size = 1000
+    in_size = 900
     encoder_size = 100
+    slope = (in_size - encoder_size) / 10
 
-    encoder_dist = (10 - i)
-    if encoder_dist < 0:
-        encoder_dist = -encoder_dist
-    slope = (in_size - encoder_size) / 20
-
+    encoder_dist = abs(10 - i)
     return int(encoder_size + encoder_dist * slope)
 
 class Autoencoder(nn.Module):
     def __init__(self):
         super(Autoencoder, self).__init__()
 
-        layers = []
-        for i in range(0, 20):
-            layers.append(nn.Linear(layer_size(i), layer_size(i + 1)))
-            layers.append(nn.ReLU())
-        self.linear_relu_stack = nn.Sequential(*layers)
+        encode_layers = []
+        for i in range(0, 10):
+            encode_layers.append(nn.Linear(layer_size(i), layer_size(i + 1)))
+            encode_layers.append(nn.ReLU())
+        self.encoder = nn.Sequential(*encode_layers)
+
+        decode_layers = []
+        for i in range(10, 20):
+            decode_layers.append(nn.Linear(layer_size(i), layer_size(i + 1)))
+            decode_layers.append(nn.ReLU())
+        self.decoder = nn.Sequential(*decode_layers)
 
         self.loss_fn = nn.MSELoss()
 
@@ -62,12 +66,18 @@ class Autoencoder(nn.Module):
         return layer_size(0)
 
     def forward(self, x):
-        return self.linear_relu_stack(x)
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def encode(self, x):
+        return self.encoder(x)
 
     def train(self, data):
-        optimizer = torch.optim.SGD(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
 
         for i, (X, _) in enumerate(data):
+            X = torch.flatten(X)
             Y = self(X)
             loss = self.loss_fn(Y, X)
 
@@ -83,6 +93,7 @@ class Autoencoder(nn.Module):
         total_loss = 0.
 
         for i, (X, _) in enumerate(data):
+            X = torch.flatten(X)
             Y = self(X)
             total_loss += self.loss_fn(Y, X).item()
 
@@ -92,8 +103,10 @@ if sys.argv[1] == '--train':
     model = Autoencoder().to(device)
     print(model)
 
-    data = ImageDataset(path='data/test/', transforms.Compose([
-        transforms.Resize((model.get_size(), model.get_size()), transforms.InterpolationMode.BILINEAR),
+    input_image_size = int(math.sqrt(model.get_size()))
+    data = ImageDataset(path='data/test/', transform = transforms.Compose([
+        transforms.Grayscale(),
+        transforms.Resize((input_image_size, input_image_size), transforms.InterpolationMode.BILINEAR),
         transforms.ToTensor(),
     ]))
     data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=32, shuffle=True, num_workers=8)
@@ -113,13 +126,15 @@ else:
     image_path = sys.argv[1]
     image = Image.open(image_path)
     image_width, image_height = image.size
-    input_size = model.get_size()
+    input_image_size = int(math.sqrt(model.get_size()))
     X = transforms.Compose([
-        transforms.Resize((input_size, input_size), transforms.InterpolationMode.BILINEAR),
+        transforms.Grayscale(),
+        transforms.Resize((input_image_size, input_image_size), transforms.InterpolationMode.BILINEAR),
         transforms.ToTensor(),
     ])(image)
+    X = torch.flatten(X)
 
-    Y = model(X)
+    Y = model.encode(X)
     Y = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((image_height, image_width), transforms.InterpolationMode.BILINEAR),
