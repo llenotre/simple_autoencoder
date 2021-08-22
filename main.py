@@ -36,45 +36,47 @@ class ImageDataset(Dataset):
     def __len__(self):
         return len(os.listdir(self.path))
 
-def layer_size(i: int) -> int:
-    in_size = 900
-    encoder_size = 100
-    slope = (in_size - encoder_size) / 10
-
-    encoder_dist = abs(10 - i)
-    return int(encoder_size + encoder_dist * slope)
-
 class Autoencoder(nn.Module):
-    def __init__(self):
+    def __init__(self, in_size: int, out_size: int):
         super(Autoencoder, self).__init__()
 
+        self.in_size = in_size
+        self.out_size = out_size
+        self.encoder_depth = 3
+
         encode_layers = []
-        for i in range(0, 10):
-            encode_layers.append(nn.Linear(layer_size(i), layer_size(i + 1)))
+        for i in range(0, self.encoder_depth):
+            encode_layers.append(nn.Linear(self.layer_size(i), self.layer_size(i + 1)))
             encode_layers.append(nn.ReLU())
         self.encoder = nn.Sequential(*encode_layers)
 
         decode_layers = []
-        for i in range(10, 20):
-            decode_layers.append(nn.Linear(layer_size(i), layer_size(i + 1)))
+        for i in range(self.encoder_depth, self.encoder_depth * 2):
+            decode_layers.append(nn.Linear(self.layer_size(i), self.layer_size(i + 1)))
             decode_layers.append(nn.ReLU())
         self.decoder = nn.Sequential(*decode_layers)
 
         self.loss_fn = nn.MSELoss()
 
-    def get_size(self):
-        return layer_size(0)
+    def layer_size(self, i: int) -> int:
+        slope = (self.in_size - self.out_size) / self.encoder_depth
+        encoder_dist = abs(self.encoder_depth - i)
+        return int(self.out_size + encoder_dist * slope)
+
+    def get_input_size(self):
+        return self.in_size
+
+    def get_output_size(self):
+        return self.out_size
 
     def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
+        return self.decoder(self.encoder(x))
 
     def encode(self, x):
         return self.encoder(x)
 
     def train(self, data):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
 
         for i, (X, _) in enumerate(data):
             X = torch.flatten(X)
@@ -99,14 +101,18 @@ class Autoencoder(nn.Module):
 
         print("Average loss:", total_loss / size)
 
+
+
+channels_count = 3
+in_dim = 30
+out_dim = 20
+
 if sys.argv[1] == '--train':
-    model = Autoencoder().to(device)
+    model = Autoencoder(in_dim * in_dim * channels_count, out_dim * out_dim * channels_count).to(device)
     print(model)
 
-    input_image_size = int(math.sqrt(model.get_size()))
     data = ImageDataset(path='data/test/', transform = transforms.Compose([
-        transforms.Grayscale(),
-        transforms.Resize((input_image_size, input_image_size), transforms.InterpolationMode.BILINEAR),
+        transforms.Resize((in_dim, in_dim), transforms.InterpolationMode.BILINEAR),
         transforms.ToTensor(),
     ]))
     data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=32, shuffle=True, num_workers=8)
@@ -126,23 +132,32 @@ else:
     image_path = sys.argv[1]
     image = Image.open(image_path)
     image_width, image_height = image.size
-    input_image_size = int(math.sqrt(model.get_size()))
     X = transforms.Compose([
-        transforms.Grayscale(),
-        transforms.Resize((input_image_size, input_image_size), transforms.InterpolationMode.BILINEAR),
+        transforms.Resize((in_dim, in_dim), transforms.InterpolationMode.BILINEAR),
         transforms.ToTensor(),
     ])(image)
+    shape = X.shape
     X = torch.flatten(X)
 
     Y = model.encode(X)
+    Y = Y.view((channels_count, out_dim, out_dim))
     Y = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((image_height, image_width), transforms.InterpolationMode.BILINEAR),
     ])(Y)
 
+    decoded = model(X)
+    decoded = decoded.view(shape)
+    decoded = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((image_height, image_width), transforms.InterpolationMode.BILINEAR),
+    ])(decoded)
+
     fig = plt.figure(figsize=(8, 8))
-    fig.add_subplot(1, 2, 1)
+    fig.add_subplot(1, 3, 1)
     plt.imshow(image)
-    fig.add_subplot(1, 2, 2)
+    fig.add_subplot(1, 3, 2)
     plt.imshow(Y)
+    fig.add_subplot(1, 3, 3)
+    plt.imshow(decoded)
     plt.show()
